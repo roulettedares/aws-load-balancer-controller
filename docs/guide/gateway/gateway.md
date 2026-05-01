@@ -17,10 +17,42 @@ The LBC is built for Gateway API version v1.5.0.
 * LBC >= v2.13.0
 * For `ip` target type:
     * Pods have native AWS VPC networking configured. For more information, see the [Amazon VPC CNI plugin](https://github.com/aws/amazon-vpc-cni-k8s#readme) documentation.
-* Installation of Gateway API CRDs
-    * Standard Gateway API CRDs: `kubectl apply --server-side=true -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml` [REQUIRED]
-    * Experimental Gateway API CRDs: `kubectl apply --server-side=true -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/experimental-install.yaml` [OPTIONAL: Used for L4 Routes]
-* Installation of LBC Gateway API specific CRDs: `kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/refs/heads/main/config/crd/gateway/gateway-crds.yaml`
+* Installation of Gateway API CRDs — choose one of:
+    * **`helm template` (recommended):** render the chart locally and pipe into `kubectl apply --server-side`. The chart bundles Gateway API CRDs under `crds/`, so this installs them without creating a Helm release secret. Enable CRDs in your values file:
+        ```yaml
+        crds:
+          gatewayAPI:
+            standard:
+              enabled: true   # required for L7 (HTTPRoute, GRPCRoute)
+            experimental:
+              enabled: true   # optional, required for L4 (TCPRoute, UDPRoute, TLSRoute)
+        ```
+        Then apply:
+        ```bash
+        helm template aws-load-balancer-controller eks/aws-load-balancer-controller \
+          -f values.yaml \
+          --include-crds \
+          | kubectl apply --server-side -f -
+        ```
+        Install or upgrade the controller itself separately with CRDs **disabled** in values to avoid the 1 MB Helm release secret limit (see warning below).
+
+    * **Manual:** apply directly from the upstream release:
+        * Standard: `kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml` [REQUIRED]
+        * Experimental: `kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/experimental-install.yaml` [OPTIONAL: Used for L4 Routes]
+
+    !!! warning "Do not install Gateway API CRDs via `helm install` or `helm upgrade`"
+        Helm stores a gzip-compressed copy of every rendered manifest in a Kubernetes Secret (capped at 1 MB). Gateway API CRDs are large enough to exceed this limit, causing installs and upgrades to fail:
+        ```
+        Error: UPGRADE FAILED: create: failed to create: Secret
+        "sh.helm.release.v1.aws-load-balancer-controller.v2" is invalid:
+        data: Too long: must have at most 1048576 bytes
+        ```
+        Use `helm template --include-crds | kubectl apply --server-side` to install CRDs out-of-band. This is the same pattern used by [Envoy Gateway](https://gateway.envoyproxy.io/docs/install/install-helm/) for the same reason.
+
+* Installation of LBC Gateway API specific CRDs:
+    ```bash
+    kubectl apply --server-side -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/refs/heads/main/config/crd/gateway/gateway-crds.yaml
+    ```
 
 
 ## Upgrading Gateway API CRDs
